@@ -1,59 +1,51 @@
 #include "Hooks.h"
 #include "Settings.h"
 
-namespace
-{
-	void InitializeLog()
-	{
-#ifndef NDEBUG
-		auto sink = std::make_shared<spdlog::sinks::msvc_sink_mt>();
-#else
-		auto path = logger::log_directory();
-		if (!path) {
-			util::report_and_fail("Failed to find standard logging directory"sv);
-		}
+#include <stddef.h>
 
-		*path /= fmt::format("{}.log"sv, Plugin::NAME);
-		auto sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true);
-#endif
+using namespace RE::BSScript;
+using namespace SKSE;
+using namespace SKSE::log;
+using namespace SKSE::stl;
 
-#ifndef NDEBUG
-		const auto level = spdlog::level::trace;
-#else
-		const auto level = spdlog::level::info;
-#endif
+namespace {
+    void InitializeLogging() {
+        auto path = log_directory();
+        if (!path) {
+            report_and_fail("Unable to lookup SKSE logs directory.");
+        }
+        *path /= PluginDeclaration::GetSingleton()->GetName();
+        *path += L".log";
 
-		auto log = std::make_shared<spdlog::logger>("global log"s, std::move(sink));
-		log->set_level(level);
-		log->flush_on(level);
+        std::shared_ptr<spdlog::logger> log;
+        if (IsDebuggerPresent()) {
+            log = std::make_shared<spdlog::logger>("Global", std::make_shared<spdlog::sinks::msvc_sink_mt>());
+        } else {
+            log = std::make_shared<spdlog::logger>(
+                "Global", std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true));
+        }
+        log->set_level(spdlog::level::info);
+        log->flush_on(spdlog::level::info);
 
-		spdlog::set_default_logger(std::move(log));
-		spdlog::set_pattern("%g(%#): [%^%l%$] %v"s);
-	}
-}
+        spdlog::set_default_logger(std::move(log));
+        spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%n] [%l] [%t] [%s:%#] %v");
+    }
+}  // namespace
 
-extern "C" DLLEXPORT constinit auto SKSEPlugin_Version = []() {
-	SKSE::PluginVersionData v;
+SKSEPluginLoad(const LoadInterface* skse) {
+    InitializeLogging();
 
-	v.PluginVersion(Plugin::VERSION);
-	v.PluginName(Plugin::NAME);
+    auto* plugin = PluginDeclaration::GetSingleton();
+    auto version = plugin->GetVersion();
+    log::info("{} {} is loading...", plugin->GetName(), version);
 
-	v.UsesAddressLibrary(true);
-	v.CompatibleVersions({ SKSE::RUNTIME_LATEST });
+    Init(skse);
 
-	return v;
-}();
+    SKSE::AllocTrampoline(1u << 4);
 
-extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_skse)
-{
-	InitializeLog();
-	logger::info("{} v{}"sv, Plugin::NAME, Plugin::VERSION.string());
+    Settings::Load();
+    Hooks::Install();
 
-	SKSE::Init(a_skse);
-	SKSE::AllocTrampoline(1u << 4);
-
-	Settings::Load();
-	Hooks::Install();
-
-	return true;
+    log::info("{} has finished loading.", plugin->GetName());
+    return true;
 }
