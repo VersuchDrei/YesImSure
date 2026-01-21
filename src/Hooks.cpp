@@ -7,10 +7,14 @@ namespace Hooks {
         template <class T, std::uint64_t FUNC_ID>
         void SkipSubMenuMenuPrompt() {
             REL::Relocation<void(T*)> func{REL::ID(FUNC_ID)};
+            logger::info("func addr: {}", func.address());
             const auto ui = RE::UI::GetSingleton();
             const auto craftingMenu = ui->GetMenu<RE::CraftingMenu>();
+            auto subMenu2 = reinterpret_cast<T*>(reinterpret_cast<std::uintptr_t>(&*craftingMenu));
             const auto subMenu = static_cast<T*>(craftingMenu->GetCraftingSubMenu());
-            func(subMenu);
+            logger::info("subMenu: {}", static_cast<int>(subMenu2->furniture->workBenchData.benchType.get()));
+            logger::info("subMenu: {}", static_cast<int>(subMenu->furniture->workBenchData.benchType.get()));
+            func(subMenu2);
         }
 
         struct SubMenuPatchCode : public Xbyak::CodeGenerator {
