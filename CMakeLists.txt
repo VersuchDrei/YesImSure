@@ -62,6 +62,7 @@ include(${COMMONLIB_SRC_DIR}/cmake/CommonLibSSE.cmake)
 ########################################################################################################################
 ## Configure target DLL
 ########################################################################################################################
+find_package(spdlog CONFIG REQUIRED)
 find_package(tomlplusplus CONFIG REQUIRED)
 find_package(xbyak CONFIG REQUIRED)
 
@@ -83,6 +84,7 @@ target_include_directories(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME}
         PRIVATE
+        spdlog::spdlog
         tomlplusplus::tomlplusplus
         xbyak::xbyak)
 
