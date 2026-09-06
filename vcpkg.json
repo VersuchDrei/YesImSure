@@ -1,22 +1,18 @@
 {
     "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
     "name": "yesimsure",
-    "version-string": "1.7.0",
+    "version-string": "1.8.0",
     "port-version": 0,
-    "description": "",
-    "homepage": "",
+    "description": "Skips 'are you sure?' confirmation prompts in Skyrim's crafting menus.",
+    "homepage": "https://github.com/VersuchDrei/YesImSure",
     "license": "MIT",
-    "features": {
-        "plugin": {
-            "description": "Build the SKSE plugin.",
-            "dependencies": [
-                "articuno",
-                "commonlibsse-ng",
-                "tomlplusplus"
-            ]
-        }
-    },
-    "default-features": [
-        "plugin"
+    "dependencies": [
+        "directxmath",
+        "directxtk",
+        "fmt",
+        "rapidcsv",
+        "spdlog",
+        "tomlplusplus",
+        "xbyak"
     ]
 }

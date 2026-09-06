@@ -1,12 +1,32 @@
 # Yes, I'm Sure
 
-## Build Dependencies
-* [AutoTOML](https://github.com/Ryan-rsm-McKenzie/AutoTOML)
-* [CommonLibSSE](https://github.com/Ryan-rsm-McKenzie/CommonLibSSE)
-* [Xbyak](https://github.com/herumi/xbyak)
+Skips the "are you sure?" confirmation prompts in Skyrim's crafting menus.
 
-## End User Dependencies
-* [SKSE64](https://skse.silverlock.org/)
+## Supported runtimes
+* Skyrim SE 1.5.97
+* Skyrim AE 1.6.x
+* Skyrim AE 1.7.99 / 1.7.104 *(patch offsets re-verified against the 1.7.104
+  binary — no offset changes were needed; all 7 prompts tested in-game on 1.7.104)*
+
+## Build dependencies
+* [CommonLibSSE-NG](https://github.com/alandtse/CommonLibSSE-NG) &ge; 7.0.0 — vendored as the
+  `extern/CommonLibSSE` git submodule (branch `ng`).
+* [vcpkg](https://github.com/microsoft/vcpkg) for the remaining packages
+  (`tomlplusplus`, `xbyak`, `spdlog`, `directxtk`, `directxmath`, `rapidcsv`, `fmt`).
+
+```
+git clone --recurse-submodules https://github.com/VersuchDrei/YesImSure.git
+# or, in an existing clone:
+git submodule update --init --recursive
+```
+
+Then configure with a CMake preset, e.g. `cmake --preset build-release-msvc`
+(`VCPKG_ROOT` must point at a vcpkg checkout).
+
+## End user dependencies
+* [SKSE64](https://skse.silverlock.org/) — the build matching your game version.
+* [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444)
+  with the database for your game version.
 
 ## Patches
 Patch | Description
