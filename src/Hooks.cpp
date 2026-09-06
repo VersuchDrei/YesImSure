@@ -4,17 +4,28 @@
 
 namespace Hooks {
     namespace {
+        // CommonLibSSE-NG >= 7 dropped RE::DebugNotification. Call the game function
+        // directly (SE 52050 / AE 52933 - the AE id the poison patch already uses).
+        void DebugNotification(const char* a_message) {
+            using func_t = void (*)(const char*, const char*, bool);
+            static const REL::Relocation<func_t> func{RELOCATION_ID(52050, 52933)};
+            func(a_message, nullptr, true);
+        }
+
+        // CommonLibSSE-NG nests this class one namespace deeper than its siblings
+        // (RE::CraftingSubMenus::CraftingSubMenus::AlchemyMenu). Alias it so the call
+        // sites read like the other sub-menus.
+        using AlchemyMenu = RE::CraftingSubMenus::CraftingSubMenus::AlchemyMenu;
+
         template <class T, std::uint64_t FUNC_ID>
         void SkipSubMenuMenuPrompt() {
-            REL::Relocation<void(T*)> func{REL::ID(FUNC_ID)};
-            logger::info("func addr: {}", func.address());
+            const REL::Relocation<void(T*)> func{REL::ID(FUNC_ID)};
             const auto ui = RE::UI::GetSingleton();
-            const auto craftingMenu = ui->GetMenu<RE::CraftingMenu>();
-            auto subMenu2 = reinterpret_cast<T*>(reinterpret_cast<std::uintptr_t>(&*craftingMenu));
-            const auto subMenu = static_cast<T*>(craftingMenu->GetCraftingSubMenu());
-            logger::info("subMenu: {}", static_cast<int>(subMenu2->furniture->workBenchData.benchType.get()));
-            logger::info("subMenu: {}", static_cast<int>(subMenu->furniture->workBenchData.benchType.get()));
-            func(subMenu2);
+            const auto craftingMenu = ui ? ui->GetMenu<RE::CraftingMenu>() : nullptr;
+            const auto subMenu = craftingMenu ? static_cast<T*>(craftingMenu->GetCraftingSubMenu()) : nullptr;
+            if (subMenu) {
+                func(subMenu);
+            }
         }
 
         struct SubMenuPatchCode : public Xbyak::CodeGenerator {
@@ -184,7 +195,7 @@ namespace Hooks {
             std::size_t len = std::snprintf(0, 0, a_fmt, name) + 1;
             const auto msg = std::make_unique<char[]>(len);
             std::snprintf(msg.get(), len, a_fmt, name);
-            RE::DebugNotification(msg.get());
+            DebugNotification(msg.get());
         }
 
         void InstallEnchantmentLearnedPatch(const bool isSE) {
@@ -272,7 +283,22 @@ namespace Hooks {
     }  // namespace
 
     void Install() {
-        const bool isSE = REL::Module::GetRuntime() != REL::Module::Runtime::AE;
+        // Runtime split: anything below 1.6.0 is SE (1.5.97 and prior); 1.6.x AND 1.7.x both
+        // take the "AE" code paths below. Compare the version directly instead of relying on
+        // REL::Module::Runtime, so a future minor bump can't silently misclassify as SE.
+        const bool isSE = REL::Module::get().version() < REL::Version{1, 6, 0, 0};
+
+        // Skyrim 1.7.99 / 1.7.104 (Aug 2026): the game binary was rebuilt and the Address
+        // Library switched to a new on-disk format (v5), both handled transparently by
+        // CommonLibSSE-NG >= 7.0.0 + the 1.7.104 Address Library. The AE crafting-menu
+        // functions moved as one block (uniform +0x16080 from 1.6.1170, +0x260 from 1.7.99);
+        // their bodies were not re-laid-out. Every hand-computed offset below (CAVE_START /
+        // CAVE_END / JUMP_OUT for all 7 patches, the poison NOP ranges and write_call<5>
+        // offsets, the EnchantmentLearned NOP/mbox ranges) was statically re-verified against
+        // SkyrimSE.exe 1.7.104 - each lands on the same instruction with the same semantics,
+        // so no offset changes are needed. Still: exercise all 7 prompts in-game before
+        // release, and if a future update DOES shift a body, add a branch gated on
+        //     !isSE && REL::Module::get().version() < REL::Version{1, 7, 99, 0}
 
         if (*Settings::ConstructibleObjectMenu) {
             if (isSE) {
@@ -306,7 +332,7 @@ namespace Hooks {
                 constexpr std::size_t CAVE_END = 0x2A9;
                 constexpr std::size_t JUMP_OUT = 0x2AB;
                 const auto fnAddr = reinterpret_cast<std::uintptr_t>(
-                    SkipSubMenuMenuPrompt<RE::CraftingSubMenus::AlchemyMenu, SKIP_FUNC>);
+                    SkipSubMenuMenuPrompt<AlchemyMenu, SKIP_FUNC>);
                 InstallSubMenuPatch<CALL_FUNC, CAVE_START, CAVE_END, JUMP_OUT>(fnAddr);
 			} else {
                 constexpr std::uint64_t CALL_FUNC = 51377;
@@ -315,7 +341,7 @@ namespace Hooks {
                 constexpr std::size_t CAVE_END = 0x2A0;
                 constexpr std::size_t JUMP_OUT = 0x2A0;
                 const auto fnAddr = reinterpret_cast<std::uintptr_t>(
-                    SkipSubMenuMenuPrompt<RE::CraftingSubMenus::AlchemyMenu, SKIP_FUNC>);
+                    SkipSubMenuMenuPrompt<AlchemyMenu, SKIP_FUNC>);
                 InstallSubMenuPatch<CALL_FUNC, CAVE_START, CAVE_END, JUMP_OUT>(fnAddr);
 			}
             
