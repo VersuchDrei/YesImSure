@@ -29,6 +29,14 @@ using namespace REL::literals;
 
 namespace logger = SKSE::log;
 
+namespace stl {
+    template <class T, std::size_t N = 5>
+    void write_thunk_call(std::uintptr_t a_src) {
+        auto& trampoline = SKSE::GetTrampoline();
+        T::func = trampoline.write_call<N>(a_src, T::thunk);
+    }
+}
+
 namespace util {
     using SKSE::stl::report_and_fail;
 }

@@ -1,6 +1,7 @@
 #include "Hooks.h"
 
 #include "Settings.h"
+#include "PoisonPatch.h"
 
 namespace Hooks {
     namespace {
@@ -10,11 +11,10 @@ namespace Hooks {
             logger::info("func addr: {}", func.address());
             const auto ui = RE::UI::GetSingleton();
             const auto craftingMenu = ui->GetMenu<RE::CraftingMenu>();
-            auto subMenu2 = reinterpret_cast<T*>(reinterpret_cast<std::uintptr_t>(&*craftingMenu));
-            const auto subMenu = static_cast<T*>(craftingMenu->GetCraftingSubMenu());
-            logger::info("subMenu: {}", static_cast<int>(subMenu2->furniture->workBenchData.benchType.get()));
-            logger::info("subMenu: {}", static_cast<int>(subMenu->furniture->workBenchData.benchType.get()));
-            func(subMenu2);
+            const auto subMenu = craftingMenu ? static_cast<T*>(craftingMenu->GetCraftingSubMenu()) : nullptr;
+            if (subMenu) {
+                func(subMenu);
+            }
         }
 
         struct SubMenuPatchCode : public Xbyak::CodeGenerator {
@@ -85,106 +85,13 @@ namespace Hooks {
             return middleHigh->leftHand ? middleHigh->leftHand : middleHigh->rightHand;
         }
 
-        void InstallPoisonPatch() {
-            constexpr std::size_t JUMP_OUT = 0x148;
-
-            const REL::Relocation<std::uintptr_t> funcBase{RELOCATION_ID(39406, 40481)};
-
-            // nop until callback gets loaded
-            {
-                constexpr std::size_t CAVE_START = 0xA3;
-                constexpr std::size_t CAVE_END = 0xD7;
-                REL::safe_fill(funcBase.address() + CAVE_START, REL::NOP, CAVE_END - CAVE_START);
-            }
-
-            // hook callback
-            {
-                constexpr std::size_t CAVE_START = 0xDE;
-                constexpr std::size_t CAVE_END = 0x112;
-                constexpr std::size_t CAVE_SIZE = CAVE_END - CAVE_START;
-
-                struct Patch : public Xbyak::CodeGenerator {
-                public:
-                    Patch(std::size_t a_callAddr, std::size_t a_retAddr) {
-                        Xbyak::Label callLbl;
-                        Xbyak::Label retLbl;
-
-                        mov(rcx, 2);
-                        call(rdx);
-                        call(ptr[rip + callLbl]);
-                        jmp(ptr[rip + retLbl]);
-
-                        L(callLbl);
-                        dq(a_callAddr);
-
-                        L(retLbl);
-                        dq(a_retAddr);
-                    }
-                };
-
-                Patch patch(reinterpret_cast<std::uintptr_t>(&RefreshInventoryMenu), funcBase.address() + JUMP_OUT);
-                patch.ready();
-                assert(patch.getSize() <= CAVE_SIZE);
-
-                REL::safe_fill(funcBase.address() + CAVE_START, REL::NOP, CAVE_SIZE);
-                REL::safe_write(funcBase.address() + CAVE_START,
-                                std::span{patch.getCode<const std::byte*>(), patch.getSize()});
-            }
-
-            // swap messagebox error for debug notification
-            {
-                constexpr std::size_t CAVE_START = 0x119;
-                constexpr std::size_t CAVE_END = 0x148;
-                constexpr std::size_t CAVE_SIZE = CAVE_END - CAVE_START;
-
-                struct Patch : public Xbyak::CodeGenerator {
-                public:
-                    Patch(std::size_t a_callAddr, std::size_t a_retAddr) {
-                        Xbyak::Label callLbl;
-                        Xbyak::Label retLbl;
-
-                        mov(rdx, 0);
-                        mov(r8, 1);
-                        call(ptr[rip + callLbl]);
-                        jmp(ptr[rip + retLbl]);
-
-                        L(callLbl);
-                        dq(a_callAddr);
-
-                        L(retLbl);
-                        dq(a_retAddr);
-                    }
-                };
-
-                const REL::Relocation<std::uintptr_t> dbgNotif{REL::ID(52933)};
-                Patch patch(dbgNotif.address(), funcBase.address() + JUMP_OUT);
-                patch.ready();
-                assert(patch.getSize() <= CAVE_SIZE);
-
-                REL::safe_fill(funcBase.address() + CAVE_START, REL::NOP, CAVE_SIZE);
-                REL::safe_write(funcBase.address() + CAVE_START,
-                                std::span{patch.getCode<const std::byte*>(), patch.getSize()});
-            }
-
-            // Fix for applying poison to left hand
-            {
-                auto& trampoline = SKSE::GetTrampoline();
-                trampoline.write_call<5>(funcBase.address() + 0x2F, &GetEquippedEntryData);
-
-                const REL::Relocation<std::uintptr_t> funcBase2{RELOCATION_ID(39407, 40482)};
-                trampoline.write_call<5>(funcBase2.address() + 0x32, &GetEquippedEntryData);
-            }
-
-            logger::debug("Installed poison patch"sv);
-        }
-
         void NotifyEnchantmentLearned(const char* a_fmt, RE::TESForm* a_item) {
             const auto fullName = a_item->As<RE::TESFullName>();
             const auto name = fullName ? fullName->GetFullName() : "";
             std::size_t len = std::snprintf(0, 0, a_fmt, name) + 1;
             const auto msg = std::make_unique<char[]>(len);
             std::snprintf(msg.get(), len, a_fmt, name);
-            RE::DebugNotification(msg.get());
+            RE::SendHUDMessage::ShowHUDMessage(msg.get());
         }
 
         void InstallEnchantmentLearnedPatch(const bool isSE) {
@@ -306,7 +213,7 @@ namespace Hooks {
                 constexpr std::size_t CAVE_END = 0x2A9;
                 constexpr std::size_t JUMP_OUT = 0x2AB;
                 const auto fnAddr = reinterpret_cast<std::uintptr_t>(
-                    SkipSubMenuMenuPrompt<RE::CraftingSubMenus::AlchemyMenu, SKIP_FUNC>);
+                    SkipSubMenuMenuPrompt<RE::CraftingSubMenus::CraftingSubMenus::AlchemyMenu, SKIP_FUNC>);
                 InstallSubMenuPatch<CALL_FUNC, CAVE_START, CAVE_END, JUMP_OUT>(fnAddr);
 			} else {
                 constexpr std::uint64_t CALL_FUNC = 51377;
@@ -315,7 +222,7 @@ namespace Hooks {
                 constexpr std::size_t CAVE_END = 0x2A0;
                 constexpr std::size_t JUMP_OUT = 0x2A0;
                 const auto fnAddr = reinterpret_cast<std::uintptr_t>(
-                    SkipSubMenuMenuPrompt<RE::CraftingSubMenus::AlchemyMenu, SKIP_FUNC>);
+                    SkipSubMenuMenuPrompt<RE::CraftingSubMenus::CraftingSubMenus::AlchemyMenu, SKIP_FUNC>);
                 InstallSubMenuPatch<CALL_FUNC, CAVE_START, CAVE_END, JUMP_OUT>(fnAddr);
 			}
             
@@ -398,7 +305,7 @@ namespace Hooks {
         }
 
         if (*Settings::Poison) {
-            InstallPoisonPatch();
+            PoisonPatch::Install();
         }
 
         logger::debug("Installed hooks"sv);
